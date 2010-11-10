@@ -25,6 +25,7 @@ public:
   int has_light(void) const { return (c & 128) >> 7; }
   int is_lit(void) const { return (c & 64) >> 6; }
   void switch_light(void) { c = (c & ~64) | (~c & 64); }
+  void reset_light(void) { c &= ~64; }
 };
 
 static const char *CMD_CHARS = "RL12*F^_";
@@ -39,7 +40,13 @@ enum cmd_e {
   nop
 };
 
-struct program_t { uint8_t cmds[12 + 8 + 8]; };
+#define CMDS_IN_MAIN 12
+#define CMDS_IN_FUNC 8
+#define F1_START     12
+#define F2_START     20
+#define CMDS_IB_PRG  28
+
+struct program_t { uint8_t cmds[CMDS_IB_PRG]; };
 
 /* http://groups.google.com/group/comp.lang.c/browse_thread/thread/a9915080a4424068/ */
 /* http://www.jstatsoft.org/v08/i14/paper */
@@ -76,7 +83,7 @@ public:
 
 static void program_from_string(struct program_t* prg, const char *s)
 {
-  for (int char_idx = 0; char_idx < 28; char_idx++)
+  for (int char_idx = 0; char_idx < CMDS_IB_PRG; char_idx++)
   {
     for (int cmd_idx = 0; cmd_idx < 8; cmd_idx++)
     {
@@ -94,13 +101,13 @@ static void program_from_string(struct program_t* prg, const char *s)
 static void program_rnd_fill(struct program_t* prg)
 {
   prng_c prng;
-  for (int i = 0; i < 12; i++)
+  for (int i = 0; i < CMDS_IN_MAIN; i++)
     prg->cmds[i] = prng.give_bits(3);
-  for (int i = 12; i < 20; i++)
+  for (int i = F1_START; i < F2_START; i++)
     do
       prg->cmds[i] = prng.give_bits(3);
     while (prg->cmds[i] == f1);
-  for (int i = 20; i < 28; i++)
+  for (int i = F2_START; i < CMDS_IB_PRG; i++)
     do
       prg->cmds[i] = prng.give_bits(3);
     while ((prg->cmds[i] == f1) || (prg->cmds[i] == f2));
@@ -112,22 +119,24 @@ static void program_mutate(struct program_t* prg)
   for (int mutation = prng.give_bits(3) + 1; mutation; mutation--)
   {
     int cmd_to_mutate = prng.give_bits(5);
-    if (cmd_to_mutate >= 30)
+    if (cmd_to_mutate >= CMDS_IB_PRG + 2)
     {
       /* insert instead of overwrite a cmd */
       cmd_to_mutate = prng.give_bits(5);
-      if (cmd_to_mutate > 26) cmd_to_mutate -= 26;
-      for (int i = 27; i > cmd_to_mutate; i--)
+      if (cmd_to_mutate > CMDS_IB_PRG - 2)
+        cmd_to_mutate -= CMDS_IB_PRG - 2;
+      for (int i = CMDS_IB_PRG - 1; i > cmd_to_mutate; i--)
         prg->cmds[i] = prg->cmds[i - 1];
     }
-    else if (cmd_to_mutate >= 28)
+    else if (cmd_to_mutate >= CMDS_IB_PRG)
     {
       /* delete a cmd, place new at end */
       cmd_to_mutate = prng.give_bits(5);
-      if (cmd_to_mutate > 26) cmd_to_mutate -= 26;
-      for (int i = cmd_to_mutate; i < 27; i++)
+      if (cmd_to_mutate > CMDS_IB_PRG - 2)
+        cmd_to_mutate -= CMDS_IB_PRG - 2;
+      for (int i = cmd_to_mutate; i < CMDS_IB_PRG - 1; i++)
         prg->cmds[i] = prg->cmds[i + 1];
-      cmd_to_mutate = 27;
+      cmd_to_mutate = CMDS_IB_PRG - 1;
     }
     prg->cmds[cmd_to_mutate] = prng.give_bits(3);
   }
@@ -135,12 +144,12 @@ static void program_mutate(struct program_t* prg)
 
 static int program_is_valid(const struct program_t* prg)
 {
-  for (int i = 0; i < 28; i++)
+  for (int i = 0; i < CMDS_IB_PRG; i++)
     assert(prg->cmds[i] >= 0 && prg->cmds[i] <= 7);
-  for (int i = 12; i < 20; i++)
+  for (int i = F1_START; i < F2_START; i++)
     if (prg->cmds[i] == f1)
       return 0;
-  for (int i = 20; i < 28; i++)
+  for (int i = F2_START; i < CMDS_IB_PRG; i++)
     if (prg->cmds[i] == f1 || prg->cmds[i] == f2)
       return 0;
   return 1;
@@ -148,14 +157,14 @@ static int program_is_valid(const struct program_t* prg)
 
 static void program_print(const struct program_t* prg)
 {
-  char temp[28];
-  for (int i = 0; i < 28; i++)
+  char temp[CMDS_IB_PRG];
+  for (int i = 0; i < CMDS_IB_PRG; i++)
     temp[i] = CMD_CHARS[prg->cmds[i]];
-  fwrite(temp, 1, 12, stdout);
+  fwrite(temp, 1, CMDS_IN_MAIN, stdout);
   putchar(' ');
-  fwrite(temp+12, 1, 8, stdout);
+  fwrite(temp+F1_START, 1, CMDS_IN_FUNC, stdout);
   putchar(' ');
-  fwrite(temp+20, 1, 8, stdout);
+  fwrite(temp+F2_START, 1, CMDS_IN_FUNC, stdout);
   putchar('\n');
 }
 
@@ -174,15 +183,8 @@ static struct coord_t step(const struct coord_t coord, enum direction dir)
   return result;
 }
 
-/*
- * TODO:
- * reset lights instead of copying map each time
- * use defines for 12, 20 and 28
- */
-static int program_execute(const struct program_t* prg)
+static int program_execute(const struct program_t* prg, square map[5][8])
 {
-  square map[5][8];
-  memcpy(&map[0][0], the_map, sizeof(map));
   enum direction curr_dir = startDirection;
   struct coord_t curr = {startX, startY};
   struct coord_t next;
@@ -202,11 +204,11 @@ static int program_execute(const struct program_t* prg)
         curr_dir = (enum direction)((curr_dir + 3) & 3); break;
       case f1:
         *(return_stack_top++) = pc + 1;
-        pc = 12;
+        pc = F1_START;
         goto again;
       case f2:
         *(return_stack_top++) = pc + 1;
-        pc = 20;
+        pc = F2_START;
         goto again;
       case light:
         if (map[curr.y][curr.x].has_light())
@@ -231,12 +233,12 @@ static int program_execute(const struct program_t* prg)
         }
         break;
     }
-    if (pc == 19 || pc == 27)
+    if (pc == F2_START - 1 || pc == CMDS_IB_PRG - 1)
       pc = *(--return_stack_top);
     else
       pc++;
   }
-  while (pc != 12);
+  while (pc != CMDS_IN_MAIN);
   int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
   return num_lights_lit << 8 | max_height_reached;
 }
@@ -253,24 +255,23 @@ static void self_test()
     { "1L^LFR21R2__FFF^L^^_^^FF*L^L", 2, 4 },
     { "**1**11_112*_*L_2^_2F_RF_^FL", 2, 4 }
   };
-  printf("Self test:\n");
+  square map[5][8];
+  memcpy(&map[0][0], the_map, sizeof(map));
   for (unsigned test_idx = 0; test_idx < sizeof(test_cases)/sizeof(test_cases[0]); test_idx++)
   {
     struct program_t prg;
     program_from_string(&prg, test_cases[test_idx].prg);
-    int result = program_execute(&prg);
+    map[2][0].reset_light();
+    map[3][7].reset_light();
+    int result = program_execute(&prg, map);
     int lights_lit = result >> 8;
     int height_reached = result & 255;
-    program_print(&prg);
-    printf("%d %d\n", lights_lit, height_reached);
     if ((lights_lit != test_cases[test_idx].lights_lit) ||
         (height_reached != test_cases[test_idx].height_reached))
     {
+      program_print(&prg);
+      printf("%d %d\n", lights_lit, height_reached);
       printf("Test failed.\n");
-    }
-    else
-    {
-      printf("Test succeeded.\n");
     }
   }
 }
@@ -291,6 +292,8 @@ int main(int argc, char** argv)
     num_rnd_tries = atoi(argv[1]);
   if (argc > 2)
     max_mutate_cnt = atoi(argv[2]);
+  square map[5][8];
+  memcpy(&map[0][0], the_map, sizeof(map));
   struct stack_item* top = new stack_item();
   top->next = NULL;
   top->mutate_cnt = 0;
@@ -324,15 +327,15 @@ int main(int argc, char** argv)
         continue;
       }
     }
-    top->result = program_execute(&top->prg);
+    map[2][0].reset_light();
+    map[3][7].reset_light();
+    top->result = program_execute(&top->prg, map);
     if (top->result <= prev_result) continue;
-    /**/
     int num_lights_lit = top->result >> 8;
     if (num_lights_lit == 2)
     {
       program_print(&top->prg);
     }
-    /**/
     prev_result = top->result;
     struct stack_item *next = new stack_item();
     next->next = top;
