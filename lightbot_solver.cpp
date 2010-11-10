@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include "unix_utils.h"
 
 static const char* the_map =
   "\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -299,6 +300,10 @@ int main(int argc, char** argv)
   top->mutate_cnt = 0;
   top->result = 0;
   int prev_result = 0;
+  long exec_counter = 0;
+  timestamp_t t0;
+  init_timestamper();
+  get_timestamp(t0);
   for (;;)
   {
     if (!top->next)
@@ -326,6 +331,16 @@ int main(int argc, char** argv)
           prev_result = top->next->result;
         continue;
       }
+    }
+    exec_counter = (exec_counter + 1) & ((1 << 20) - 1);
+    if (!exec_counter)
+    {
+      timestamp_t t1;
+      get_timestamp(t1);
+      timestamp_diff(t0,t1);
+      printf("%d program executions took " PRINTF_TIMESTAMP_STR " sec.\n",
+             1 << 20, PRINTF_TIMESTAMP_VAL(t0));
+      t0 = t1;
     }
     map[2][0].reset_light();
     map[3][7].reset_light();

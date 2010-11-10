@@ -23,7 +23,7 @@ lightbot_solver.o: lightbot_solver.cpp
 	$(GPP) $(FLAGS) -c -o $@ $<
 
 lightbot_solver: lightbot_solver.o
-	$(GPP) $(FLAGS) $(LDFLAGS) -o $@ $<
+	$(GPP) $(FLAGS) $(LDFLAGS) -o $@ $< -lrt
 
 lightbot_solver_pgo: lightbot_solver.cpp
 	rm -f lightbot_solver lightbot_solver.o
