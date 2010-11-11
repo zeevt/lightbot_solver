@@ -1,6 +1,7 @@
 GPP = g++
 #GPP = clang++
-CXXFLAGS = -std=c++98 -Wall -pedantic -fvisibility=hidden -fno-exceptions -fno-rtti
+LDFLAGS = -Wl,-O1 -fwhole-program -flto
+CXXFLAGS = -std=c++98 -Wall -pedantic -fvisibility=hidden -fno-exceptions -fno-rtti -flto
 OPT_FLAGS = -DNDEBUG -g -fomit-frame-pointer
 DEBUG_FLAGS = -DDEBUG -O0 -ggdb -gdwarf-4 -fno-omit-frame-pointer
 PGO_GEN_FLAGS = -fprofile-generate -O3
@@ -15,15 +16,14 @@ else
 FLAGS = $(CXXFLAGS) $(OPT_FLAGS) -Os
 endif
 
-LDFLAGS = -Wl,-O1 -fwhole-program
 
-all: lightbot_solver
+all: lightbot_solver curses_player
 
-lightbot_solver.o: lightbot_solver.cpp
+%.o: %.cpp lightbot_solver.h
 	$(GPP) $(FLAGS) -c -o $@ $<
 
-lightbot_solver: lightbot_solver.o
-	$(GPP) $(FLAGS) $(LDFLAGS) -o $@ $< -lrt
+lightbot_solver: lightbot_solver.o curses_player.o
+	$(GPP) $(FLAGS) $(LDFLAGS) -o $@ $^ -lrt -lncurses
 
 lightbot_solver_pgo: lightbot_solver.cpp
 	rm -f lightbot_solver lightbot_solver.o
@@ -32,6 +32,9 @@ lightbot_solver_pgo: lightbot_solver.cpp
 	rm -f lightbot_solver lightbot_solver.o
 	$(MAKE) lightbot_solver PGO_USE=yes
 
+curses_player: curses_player.cpp
+	$(GPP) $(FLAGS) -DTEST -o $@ $< -lncurses
+
 clean:
 	rm -f perf.data perf.data.old *.o *.gcda cachegrind.out.* \
-	lightbot_solver
+	lightbot_solver curses_player

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include "unix_utils.h"
+#include "lightbot_solver.h"
 
 static const char* the_map =
   "\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -14,40 +15,7 @@ static const char* the_map =
 
 static const uint8_t startX = 0, startY = 1;
 
-enum direction { N, E, S, W };
 static const enum direction startDirection = E;
-
-class square
-{
-private:
-  uint8_t c;
-public:
-  uint8_t get_height(void) const { return c & 63; }
-  int has_light(void) const { return (c & 128) >> 7; }
-  int is_lit(void) const { return (c & 64) >> 6; }
-  void switch_light(void) { c = (c & ~64) | (~c & 64); }
-  void reset_light(void) { c &= ~64; }
-};
-
-static const char *CMD_CHARS = "RL12*F^_";
-enum cmd_e {
-  right,
-  left,
-  f1,
-  f2,
-  light,
-  forward,
-  jump,
-  nop
-};
-
-#define CMDS_IN_MAIN 12
-#define CMDS_IN_FUNC 8
-#define F1_START     12
-#define F2_START     20
-#define CMDS_IB_PRG  28
-
-struct program_t { uint8_t cmds[CMDS_IB_PRG]; };
 
 /* http://groups.google.com/group/comp.lang.c/browse_thread/thread/a9915080a4424068/ */
 /* http://www.jstatsoft.org/v08/i14/paper */
@@ -80,6 +48,9 @@ public:
     return retval;
   }
 };
+
+
+extern const struct player_funcs_t ncurses_player;
 
 
 static void program_from_string(struct program_t* prg, const char *s)
@@ -169,8 +140,6 @@ static void program_print(const struct program_t* prg)
   putchar('\n');
 }
 
-struct coord_t { uint8_t x, y; };
-
 static struct coord_t step(const struct coord_t coord, enum direction dir)
 {
   struct coord_t result = coord;
@@ -184,10 +153,16 @@ static struct coord_t step(const struct coord_t coord, enum direction dir)
   return result;
 }
 
-static int program_execute(const struct program_t* prg, square map[5][8])
+static int program_execute(const struct program_t* prg,
+                           square map[5][8],
+                           const struct player_funcs_t* player)
 {
+  struct state_t *state;
+  if (player) state = player->init(5, 8, &map[0][0], prg);
   enum direction curr_dir = startDirection;
+  if (player) player->set_dir(state, curr_dir);
   struct coord_t curr = {startX, startY};
+  if (player) player->set_coord(state, curr);
   struct coord_t next;
   uint8_t curr_height, next_height;
   uint8_t return_stack[2];
@@ -197,12 +172,17 @@ static int program_execute(const struct program_t* prg, square map[5][8])
   do
   {
     again:
+    if (player) player->set_pc(state, pc);
     switch (prg->cmds[pc])
     {
       case right:
-        curr_dir = (enum direction)((curr_dir + 1) & 3); break;
+        curr_dir = (enum direction)((curr_dir + 1) & 3);
+        if (player) player->set_dir(state, curr_dir);
+        break;
       case left:
-        curr_dir = (enum direction)((curr_dir + 3) & 3); break;
+        curr_dir = (enum direction)((curr_dir + 3) & 3);
+        if (player) player->set_dir(state, curr_dir);
+        break;
       case f1:
         *(return_stack_top++) = pc + 1;
         pc = F1_START;
@@ -213,7 +193,10 @@ static int program_execute(const struct program_t* prg, square map[5][8])
         goto again;
       case light:
         if (map[curr.y][curr.x].has_light())
+        {
           map[curr.y][curr.x].switch_light();
+          if (player) player->switch_light(state);
+        }
         break;
       case forward:
       case jump:
@@ -223,7 +206,10 @@ static int program_execute(const struct program_t* prg, square map[5][8])
         if (prg->cmds[pc] == forward)
         {
           if (curr_height == next_height)
+          {
             curr = next;
+            if (player) player->set_coord(state, curr);
+          }
           break;
         }
         if ((next_height < curr_height) || (next_height == curr_height + 1))
@@ -231,6 +217,7 @@ static int program_execute(const struct program_t* prg, square map[5][8])
           if (next_height > max_height_reached)
             max_height_reached = next_height;
           curr = next;
+          if (player) player->set_coord(state, curr);
         }
         break;
     }
@@ -240,6 +227,7 @@ static int program_execute(const struct program_t* prg, square map[5][8])
       pc++;
   }
   while (pc != CMDS_IN_MAIN);
+  if (player) player->shutdown(state);
   int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
   return num_lights_lit << 8 | max_height_reached;
 }
@@ -264,7 +252,7 @@ static void self_test()
     program_from_string(&prg, test_cases[test_idx].prg);
     map[2][0].reset_light();
     map[3][7].reset_light();
-    int result = program_execute(&prg, map);
+    int result = program_execute(&prg, map, &ncurses_player);
     int lights_lit = result >> 8;
     int height_reached = result & 255;
     if ((lights_lit != test_cases[test_idx].lights_lit) ||
@@ -344,7 +332,7 @@ int main(int argc, char** argv)
     }
     map[2][0].reset_light();
     map[3][7].reset_light();
-    top->result = program_execute(&top->prg, map);
+    top->result = program_execute(&top->prg, map, NULL);
     if (top->result <= prev_result) continue;
     int num_lights_lit = top->result >> 8;
     if (num_lights_lit == 2)
