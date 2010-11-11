@@ -157,7 +157,7 @@ static int program_execute(const struct program_t* prg,
                            square map[5][8],
                            const struct player_funcs_t* player)
 {
-  struct state_t *state;
+  struct state_t *state = NULL;
   if (player) state = player->init(5, 8, &map[0][0], prg);
   enum direction curr_dir = startDirection;
   if (player) player->set_dir(state, curr_dir);
@@ -328,6 +328,7 @@ int main(int argc, char** argv)
       timestamp_diff(t0,t1);
       printf("%d program executions took " PRINTF_TIMESTAMP_STR " sec.\n",
              1 << 20, PRINTF_TIMESTAMP_VAL(t0));
+      fflush(stdout);
       t0 = t1;
     }
     map[2][0].reset_light();
