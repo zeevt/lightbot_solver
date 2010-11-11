@@ -26,10 +26,10 @@ lightbot_solver: lightbot_solver.o curses_player.o
 	$(GPP) $(FLAGS) $(LDFLAGS) -o $@ $^ -lrt -lncurses
 
 lightbot_solver_pgo: lightbot_solver.cpp
-	rm -f lightbot_solver lightbot_solver.o
+	rm -f lightbot_solver *.o
 	$(MAKE) lightbot_solver PGO_GEN=yes
 	./lightbot_solver 100 100 &>/dev/null
-	rm -f lightbot_solver lightbot_solver.o
+	rm -f lightbot_solver *.o
 	$(MAKE) lightbot_solver PGO_USE=yes
 
 curses_player: curses_player.cpp
