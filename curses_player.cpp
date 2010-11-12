@@ -51,12 +51,12 @@ static void draw_program(struct state_t *state)
       char c = CMD_CHARS[cmd];
       if (pc == state->pc)
       {
-        mvwaddch(state->cmd_window, row, col * 2,
+        (void)mvwaddch(state->cmd_window, row, col * 2,
                  c | A_BOLD | COLOR_PAIR(1));
       }
       else
       {
-        mvwaddch(state->cmd_window, row, col * 2,
+        (void)mvwaddch(state->cmd_window, row, col * 2,
                  c | COLOR_PAIR(3));
       }
     }
@@ -72,19 +72,19 @@ static void draw_map(struct state_t *state)
     {
       int map_idx = row * state->map_width + col;
       const square *cell = &state->map[map_idx];
-      const char c = cell->get_height() + 48;
+      int c = cell->get_height() + 48;
       if (cell->has_light())
         if (cell->is_lit())
-          mvwaddch(state->map_window, row, col * 2, c | A_BOLD | COLOR_PAIR(1));
+          (void)mvwaddch(state->map_window, row, col * 2, c | A_BOLD | COLOR_PAIR(1));
         else
-          mvwaddch(state->map_window, row, col * 2, c | COLOR_PAIR(2));
+          (void)mvwaddch(state->map_window, row, col * 2, c | COLOR_PAIR(2));
       else
-        mvwaddch(state->map_window, row, col * 2, c | COLOR_PAIR(3));
+        (void)mvwaddch(state->map_window, row, col * 2, c | COLOR_PAIR(3));
       if ((row == state->coord.y) && (col == state->coord.x))
       {
         assert((state->dir >= 0) && (state->dir < 4));
-        const int c = arrows[state->dir];
-        mvwaddch(state->map_window, row, col * 2 + 1, c | A_BOLD | COLOR_PAIR(4));
+        c = arrows[state->dir];
+        (void)mvwaddch(state->map_window, row, col * 2 + 1, c | A_BOLD | COLOR_PAIR(4));
       }
     }
   }
@@ -159,7 +159,7 @@ void player_set_pc(struct state_t *state, uint8_t pc)
 
 void player_set_coord(struct state_t *state, struct coord_t coord)
 {
-  mvwaddch(state->map_window, state->coord.y, state->coord.x * 2 + 1, ' ');
+  (void)mvwaddch(state->map_window, state->coord.y, state->coord.x * 2 + 1, ' ');
   state->coord = coord;
   draw_map(state);
   refresh();
