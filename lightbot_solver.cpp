@@ -127,17 +127,17 @@ static int program_is_valid(const struct program_t* prg)
   return 1;
 }
 
-static void program_print(const struct program_t* prg)
+static void program_print(const struct program_t* prg, FILE* stream)
 {
   char temp[CMDS_IB_PRG];
   for (int i = 0; i < CMDS_IB_PRG; i++)
     temp[i] = CMD_CHARS[prg->cmds[i]];
-  fwrite(temp, 1, CMDS_IN_MAIN, stdout);
-  putchar(' ');
-  fwrite(temp+F1_START, 1, CMDS_IN_FUNC, stdout);
-  putchar(' ');
-  fwrite(temp+F2_START, 1, CMDS_IN_FUNC, stdout);
-  putchar('\n');
+  fwrite(temp, 1, CMDS_IN_MAIN, stream);
+  putc(' ', stream);
+  fwrite(temp+F1_START, 1, CMDS_IN_FUNC, stream);
+  putc(' ', stream);
+  fwrite(temp+F2_START, 1, CMDS_IN_FUNC, stream);
+  putc('\n', stream);
 }
 
 static struct coord_t step(const struct coord_t coord, enum direction dir)
@@ -153,16 +153,17 @@ static struct coord_t step(const struct coord_t coord, enum direction dir)
   return result;
 }
 
+template<bool callbacks>
 static int program_execute(const struct program_t* prg,
                            square map[5][8],
                            const struct player_funcs_t* player)
 {
   struct state_t *state = NULL;
-  if (player) state = player->init(5, 8, &map[0][0], prg);
+  if (callbacks && player) state = player->init(5, 8, &map[0][0], prg);
   enum direction curr_dir = startDirection;
-  if (player) player->set_dir(state, curr_dir);
+  if (callbacks && player) player->set_dir(state, curr_dir);
   struct coord_t curr = {startX, startY};
-  if (player) player->set_coord(state, curr);
+  if (callbacks && player) player->set_coord(state, curr);
   struct coord_t next;
   uint8_t curr_height, next_height;
   uint8_t return_stack[2];
@@ -172,16 +173,16 @@ static int program_execute(const struct program_t* prg,
   do
   {
     again:
-    if (player) player->set_pc(state, pc);
+    if (callbacks && player) player->set_pc(state, pc);
     switch (prg->cmds[pc])
     {
       case right:
         curr_dir = (enum direction)((curr_dir + 1) & 3);
-        if (player) player->set_dir(state, curr_dir);
+        if (callbacks && player) player->set_dir(state, curr_dir);
         break;
       case left:
         curr_dir = (enum direction)((curr_dir + 3) & 3);
-        if (player) player->set_dir(state, curr_dir);
+        if (callbacks && player) player->set_dir(state, curr_dir);
         break;
       case f1:
         *(return_stack_top++) = pc + 1;
@@ -195,7 +196,7 @@ static int program_execute(const struct program_t* prg,
         if (map[curr.y][curr.x].has_light())
         {
           map[curr.y][curr.x].switch_light();
-          if (player) player->switch_light(state);
+          if (callbacks && player) player->switch_light(state);
         }
         break;
       case forward:
@@ -208,7 +209,7 @@ static int program_execute(const struct program_t* prg,
           if (curr_height == next_height)
           {
             curr = next;
-            if (player) player->set_coord(state, curr);
+            if (callbacks && player) player->set_coord(state, curr);
           }
           break;
         }
@@ -217,7 +218,7 @@ static int program_execute(const struct program_t* prg,
           if (next_height > max_height_reached)
             max_height_reached = next_height;
           curr = next;
-          if (player) player->set_coord(state, curr);
+          if (callbacks && player) player->set_coord(state, curr);
         }
         break;
     }
@@ -227,7 +228,7 @@ static int program_execute(const struct program_t* prg,
       pc++;
   }
   while (pc != CMDS_IN_MAIN);
-  if (player) player->shutdown(state);
+  if (callbacks && player) player->shutdown(state);
   int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
   return num_lights_lit << 8 | max_height_reached;
 }
@@ -252,15 +253,15 @@ static void self_test()
     program_from_string(&prg, test_cases[test_idx].prg);
     map[2][0].reset_light();
     map[3][7].reset_light();
-    int result = program_execute(&prg, map, &ncurses_player);
+    int result = program_execute<true>(&prg, map, &ncurses_player);
     int lights_lit = result >> 8;
     int height_reached = result & 255;
     if ((lights_lit != test_cases[test_idx].lights_lit) ||
         (height_reached != test_cases[test_idx].height_reached))
     {
-      program_print(&prg);
-      printf("%d %d\n", lights_lit, height_reached);
-      printf("Test failed.\n");
+      program_print(&prg, stderr);
+      fprintf(stderr, "%d %d\n", lights_lit, height_reached);
+      fprintf(stderr, "Test failed.\n");
     }
   }
 }
@@ -274,13 +275,26 @@ struct stack_item {
 
 int main(int argc, char** argv)
 {
+  if (argc < 2)
+  {
+    fprintf(stderr,
+            "Usage: %s output_file <num_rnd_tries> <max_mutate_cnt>\n",
+            argv[0]);
+    exit(1);
+  }
   self_test();
   int num_rnd_tries = 100000;
   int max_mutate_cnt = 10000;
-  if (argc > 1)
-    num_rnd_tries = atoi(argv[1]);
+  FILE* stream = fopen(argv[1], "w");
+  if (!stream)
+  {
+    fprintf(stderr, "Couldn't open %s for writing.\n", argv[1]);
+    exit(2);
+  }
   if (argc > 2)
-    max_mutate_cnt = atoi(argv[2]);
+    num_rnd_tries = atoi(argv[2]);
+  if (argc > 3)
+    max_mutate_cnt = atoi(argv[3]);
   square map[5][8];
   memcpy(&map[0][0], the_map, sizeof(map));
   struct stack_item* top = new stack_item();
@@ -333,12 +347,12 @@ int main(int argc, char** argv)
     }
     map[2][0].reset_light();
     map[3][7].reset_light();
-    top->result = program_execute(&top->prg, map, NULL);
+    top->result = program_execute<false>(&top->prg, map, NULL);
     if (top->result <= prev_result) continue;
     int num_lights_lit = top->result >> 8;
     if (num_lights_lit == 2)
     {
-      program_print(&top->prg);
+      program_print(&top->prg, stream);
     }
     prev_result = top->result;
     struct stack_item *next = new stack_item();
@@ -347,5 +361,6 @@ int main(int argc, char** argv)
     top = next;
   }
   delete top;
+  fclose(stream);
   return 0;
 }
