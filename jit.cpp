@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include "lightbot_solver.h"
+#include "jit.h"
 
 /*
 RDI = y
@@ -20,7 +21,7 @@ benchmark aligning func entry to 16 byte
 benchmark tail calling last func in function
 */
 
-void do_right(void)
+void do_right(int y, int x, int dir, void *map)
 {
   asm(
     "inc %rdx\n"
@@ -28,7 +29,7 @@ void do_right(void)
   );
 }
 
-void do_left(void)
+void do_left(int y, int x, int dir, void *map)
 {
   asm(
     "add $3, %rdx\n"
@@ -36,7 +37,7 @@ void do_left(void)
   );
 }
 
-void do_light(void)
+void do_light(int y, int x, int dir, void *map)
 {
   asm(
     "mov %rdi, %r8\n"
@@ -55,7 +56,7 @@ void do_light(void)
   );
 }
 
-void __attribute__((noinline)) do_before_step(void)
+void __attribute__((noinline)) do_before_step(int y, int x, int dir, void *map)
 {
   asm(
   "mov  %rdi, %r8\n"
@@ -99,9 +100,9 @@ void __attribute__((noinline)) do_before_step(void)
   );
 }
 
-void do_forward(void)
+void do_forward(int y, int x, int dir, void *map)
 {
-  do_before_step();
+  do_before_step(y, x, dir, map);
   asm(
     "cmp  %al,  %bl\n"
     "jne  forward_end\n"
@@ -111,9 +112,9 @@ void do_forward(void)
   );
 }
 
-void do_jump(void)
+void do_jump(int y, int x, int dir, void *map)
 {
-  do_before_step();
+  do_before_step(y, x, dir, map);
   asm(
     "cmp  %al,  %bl\n"
     "jb   perform_jump\n"
@@ -139,19 +140,6 @@ void do_jump(void)
 #define F2_AMD64_START      80 + 48
 #define GENERATED_CODE_SIZE 176
 
-class JITter
-{
-public:
-  JITter();
-  ~JITter();
-  void generate_code(const struct program_t *prg);
-  int run_program(int y, int x, int dir, void *map);
-private:
-  void *generated_code;
-  typedef void (*func_t)(void);
-  func_t funcs[7];
-};
-
 JITter::JITter()
 {
   this->generated_code = NULL;
@@ -162,11 +150,14 @@ JITter::JITter()
   if (posix_memalign(&this->generated_code, pagesize, GENERATED_CODE_SIZE))
     handle_error("posix_memalign");
   
+  if (mprotect(this->generated_code, GENERATED_CODE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC))
+    handle_error("mprotect");
+  
   uint8_t *p = (uint8_t *)this->generated_code;
   this->funcs[right] = &do_right;
   this->funcs[left] = &do_left;
-  this->funcs[f1] = (void (*)())&p[F1_AMD64_START];
-  this->funcs[f2] = (void (*)())&p[F2_AMD64_START];
+  this->funcs[f1] = (func_t)&p[F1_AMD64_START];
+  this->funcs[f2] = (func_t)&p[F2_AMD64_START];
   this->funcs[light] = &do_light;
   this->funcs[forward] = &do_forward;
   this->funcs[jump] = &do_jump;
@@ -186,37 +177,48 @@ void JITter::generate_code(const struct program_t *prg)
   *(p++) = '\x53';// push   %rbx
   *(p++) = '\x31';//
   *(p++) = '\xed';// xor %ebp, %ebp
-  for (int cmd = 0; cmd < CMDS_IN_PRG; cmd++)
+  for (int cmd = 0; cmd < CMDS_IN_MAIN; cmd++)
   {
     int curr_cmd = prg->cmds[cmd];
-    if (curr_cmd != nop)
-    {
-      int64_t next_rip = (int64_t)p + 5;
-      int64_t target = (int64_t)funcs[curr_cmd];
-      int64_t diff = target - next_rip;
-      *(p++) = '\xe8';// call
-      *(int32_t*)p = (int32_t)(diff);
-      p += 4;
-    }
-    if (cmd == F1_START - 1)
-    {
-      *(p++) = '\x89';//
-      *(p++) = '\xe8';// mov   %ebp, %eax
-      *(p++) = '\x5b';// pop   %rbx
-      *(p++) = '\x5d';// pop   %rbp
-      *p = '\xc3';    // retq
-      p = &generated_codep[F1_AMD64_START];
-    }
-    else if (cmd == F2_START - 1)
-    {
-      *p = '\xc3';    // retq
-      p = &generated_codep[F2_AMD64_START];
-    }
-    else if (cmd == CMDS_IN_PRG - 1)
-    {
-      *p = '\xc3';    // retq
-    }
+    if (curr_cmd == nop) continue;
+    int64_t next_rip = (int64_t)p + 5;
+    int64_t target = (int64_t)funcs[curr_cmd];
+    int64_t diff = target - next_rip;
+    *(p++) = '\xe8';// call
+    *(int32_t*)p = (int32_t)(diff);
+    p += 4;
   }
+  *(p++) = '\x89';//
+  *(p++) = '\xe8';// mov   %ebp, %eax
+  *(p++) = '\x5b';// pop   %rbx
+  *(p++) = '\x5d';// pop   %rbp
+  *p = '\xc3';    // retq
+  p = &generated_codep[F1_AMD64_START];
+  for (int cmd = F1_START; cmd < F2_START; cmd++)
+  {
+    int curr_cmd = prg->cmds[cmd];
+    if (curr_cmd == nop) continue;
+    int64_t next_rip = (int64_t)p + 5;
+    int64_t target = (int64_t)funcs[curr_cmd];
+    int64_t diff = target - next_rip;
+    *(p++) = '\xe8';// call
+    *(int32_t*)p = (int32_t)(diff);
+    p += 4;
+  }
+  *p = '\xc3';    // retq
+  p = &generated_codep[F2_AMD64_START];
+  for (int cmd = F2_START; cmd < CMDS_IN_PRG; cmd++)
+  {
+    int curr_cmd = prg->cmds[cmd];
+    if (curr_cmd == nop) continue;
+    int64_t next_rip = (int64_t)p + 5;
+    int64_t target = (int64_t)funcs[curr_cmd];
+    int64_t diff = target - next_rip;
+    *(p++) = '\xe8';// call
+    *(int32_t*)p = (int32_t)(diff);
+    p += 4;
+  }
+  *p = '\xc3';    // retq
 #ifdef DEBUG
   for (int i = 0; i < GENERATED_CODE_SIZE; i++)
     printf("%2x ", generated_codep[i]);
@@ -226,13 +228,9 @@ void JITter::generate_code(const struct program_t *prg)
 
 int JITter::run_program(int y, int x, int dir, void *map)
 {
-  if (mprotect(this->generated_code, GENERATED_CODE_SIZE, PROT_READ | PROT_EXEC))
-    handle_error("mprotect");
   typedef int (*do_program_t)(int y, int x, int dir, void *map);
   do_program_t do_program = (do_program_t)this->generated_code;
   int result = do_program(y, x, dir, map);
-  if (mprotect(this->generated_code, GENERATED_CODE_SIZE, PROT_READ | PROT_WRITE))
-    handle_error("mprotect");
   return result;
 }
 

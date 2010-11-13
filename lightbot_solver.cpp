@@ -3,8 +3,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+//#include <ncurses.h>
 #include "unix_utils.h"
 #include "lightbot_solver.h"
+#include "jit.h"
 
 static const char* the_map =
   "\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -173,6 +175,7 @@ static int program_execute(const struct program_t* prg,
   do
   {
     again:
+    /*getch();*/
     if (callbacks && player) player->set_pc(state, pc);
     switch (prg->cmds[pc])
     {
@@ -282,7 +285,7 @@ int main(int argc, char** argv)
             argv[0]);
     exit(1);
   }
-  self_test();
+//  self_test();
   int num_rnd_tries = 100000;
   int max_mutate_cnt = 10000;
   FILE* stream = fopen(argv[1], "w");
@@ -297,6 +300,7 @@ int main(int argc, char** argv)
     max_mutate_cnt = atoi(argv[3]);
   square map[5][8];
   memcpy(&map[0][0], the_map, sizeof(map));
+  JITter jitter;
   struct stack_item* top = new stack_item();
   top->next = NULL;
   top->mutate_cnt = 0;
@@ -347,9 +351,13 @@ int main(int argc, char** argv)
     }
     map[2][0].reset_light();
     map[3][7].reset_light();
-    top->result = program_execute<false>(&top->prg, map, NULL);
+    jitter.generate_code(&top->prg);
+    int max_height_reached = jitter.run_program(1, 0, 1, &map[0][0]);
+    int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
+    top->result = (num_lights_lit << 8) | (max_height_reached & 0xff);
+//    top->result = program_execute<false>(&top->prg, map, NULL);
     if (top->result <= prev_result) continue;
-    int num_lights_lit = top->result >> 8;
+//    int num_lights_lit = top->result >> 8;
     if (num_lights_lit == 2)
     {
       program_print(&top->prg, stream);

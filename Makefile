@@ -39,14 +39,14 @@ all: lightbot_solver curses_player
 %.o: %.cpp lightbot_solver.h
 	$(GPP) $(FLAGS) -c -o $@ $<
 
-lightbot_solver: lightbot_solver.o curses_player.o
-	$(GPP) $(FLAGS) $(LDFLAGS) -o $@ $^ -lrt -lncurses
+lightbot_solver: lightbot_solver.o curses_player.o jit.o
+	$(GPP) $(FLAGS) $(LDFLAGS) -finstrument-functions-exclude-function-list=do_right,do_left,do_light,do_before_step,do_forward,do_jump -o $@ $^ -lrt -lncurses
 
-lightbot_solver_pgo: lightbot_solver.cpp
-	rm -f lightbot_solver *.o
+lightbot_solver_pgo: lightbot_solver.cpp jit.o
+	rm -f lightbot_solver lightbot_solver.o curses_player.o
 	$(MAKE) lightbot_solver CC=$(CC) PGO_GEN=yes
 	./lightbot_solver out.temp 100 100 &>/dev/null
-	rm -f lightbot_solver *.o
+	rm -f lightbot_solver lightbot_solver.o curses_player.o
 	$(MAKE) lightbot_solver CC=$(CC) PGO_USE=yes
 
 curses_player: curses_player.cpp
