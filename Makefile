@@ -52,7 +52,10 @@ lightbot_solver_pgo: lightbot_solver.cpp
 curses_player: curses_player.cpp
 	$(GPP) $(FLAGS) -DTEST -o $@ $< -lncurses
 
+jit: jit.cpp lightbot_solver.h
+	$(GPP) $(FLAGS) $(LDFLAGS) -DTEST -o $@ jit.cpp
+
 clean:
 	rm -f perf.data perf.data.old *.o *.gcda cachegrind.out.* \
 	*.temp *.dyn *.dpi *.dpi.lock \
-	lightbot_solver curses_player
+	lightbot_solver curses_player jit
