@@ -1,6 +1,5 @@
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -11,11 +10,12 @@ RDI = y
 RSI = x
 RDX = dir
 RCX = map
+R8  = nexy.y
+R9  = nexy.x
 */
 
 /*
 TODO:
-add max height reached calculation (place in ebp?)
 benchmark aligning func entry to 16 byte
 benchmark tail calling last func in function
 */
@@ -120,6 +120,9 @@ void do_jump(void)
     "inc  %al\n"
     "cmp  %al,   %bl\n"
     "jne  jump_end\n"
+    "cmp  %bl,  %bpl\n"
+    "jae  perform_jump\n"
+    "mov  %bl,  %bpl\n"
     "perform_jump:\n"
     "mov  %r8,  %rdi\n"
     "mov  %r9,  %rsi\n"
@@ -130,8 +133,8 @@ void do_jump(void)
 #define handle_error(msg) \
   do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
-// 5 * 12 + 5 = 65 --> 80
-// 5 * 8 + 1 = 41 --> 48
+// 5 * 12 + 9 = 69 --> 80
+// 5 * 8  + 1 = 41 --> 48
 #define F1_AMD64_START      80
 #define F2_AMD64_START      80 + 48
 #define GENERATED_CODE_SIZE 176
@@ -142,7 +145,7 @@ public:
   JITter();
   ~JITter();
   void generate_code(const struct program_t *prg);
-  void run_program(int y, int x, int dir, void *map);
+  int run_program(int y, int x, int dir, void *map);
 private:
   void *generated_code;
   typedef void (*func_t)(void);
@@ -181,6 +184,8 @@ void JITter::generate_code(const struct program_t *prg)
   uint8_t *p = generated_codep;
   *(p++) = '\x55';// push   %rbp
   *(p++) = '\x53';// push   %rbx
+  *(p++) = '\x31';//
+  *(p++) = '\xed';// xor %ebp, %ebp
   for (int cmd = 0; cmd < CMDS_IN_PRG; cmd++)
   {
     int curr_cmd = prg->cmds[cmd];
@@ -189,12 +194,14 @@ void JITter::generate_code(const struct program_t *prg)
       int64_t next_rip = (int64_t)p + 5;
       int64_t target = (int64_t)funcs[curr_cmd];
       int64_t diff = target - next_rip;
-      *(p++) = '\xe8';// retq
+      *(p++) = '\xe8';// call
       *(int32_t*)p = (int32_t)(diff);
       p += 4;
     }
     if (cmd == F1_START - 1)
     {
+      *(p++) = '\x89';//
+      *(p++) = '\xe8';// mov   %ebp, %eax
       *(p++) = '\x5b';// pop   %rbx
       *(p++) = '\x5d';// pop   %rbp
       *p = '\xc3';    // retq
@@ -217,18 +224,20 @@ void JITter::generate_code(const struct program_t *prg)
 #endif
 }
 
-void JITter::run_program(int y, int x, int dir, void *map)
+int JITter::run_program(int y, int x, int dir, void *map)
 {
   if (mprotect(this->generated_code, GENERATED_CODE_SIZE, PROT_READ | PROT_EXEC))
     handle_error("mprotect");
-  typedef void(*do_program_t)(int y, int x, int dir, void *map);
+  typedef int (*do_program_t)(int y, int x, int dir, void *map);
   do_program_t do_program = (do_program_t)this->generated_code;
-  do_program(y, x, dir, map);
+  int result = do_program(y, x, dir, map);
   if (mprotect(this->generated_code, GENERATED_CODE_SIZE, PROT_READ | PROT_WRITE))
     handle_error("mprotect");
+  return result;
 }
 
 #ifdef TEST
+#include <string.h>
 
 static void program_from_string(struct program_t* prg, const char *s)
 {
@@ -254,7 +263,6 @@ static const char* the_map =
   "\x00\x00\x00\x04\x03\x04\x02\x82"
   "\x00\x00\x00\x00\x00\x00\x00\x00";
 
-
 int main()
 {
   struct program_t prg;
@@ -264,10 +272,10 @@ int main()
   
   JITter jitter;
   jitter.generate_code(&prg);
-  jitter.run_program(1, 0, 1, &map[0][0]);
+  int result = jitter.run_program(1, 0, 1, &map[0][0]);
   
   int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
-  printf("%d\n", num_lights_lit);
+  printf("%d %d\n", num_lights_lit, result);
   
   return 0;
 }
