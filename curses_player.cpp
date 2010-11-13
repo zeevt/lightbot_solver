@@ -195,7 +195,7 @@ extern const struct player_funcs_t ncurses_player =
 
 static void program_from_string(struct program_t* prg, const char *s)
 {
-  for (int char_idx = 0; char_idx < CMDS_IB_PRG; char_idx++)
+  for (int char_idx = 0; char_idx < CMDS_IN_PRG; char_idx++)
   {
     for (int cmd_idx = 0; cmd_idx < 8; cmd_idx++)
     {

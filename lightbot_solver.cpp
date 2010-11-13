@@ -55,7 +55,7 @@ extern const struct player_funcs_t ncurses_player;
 
 static void program_from_string(struct program_t* prg, const char *s)
 {
-  for (int char_idx = 0; char_idx < CMDS_IB_PRG; char_idx++)
+  for (int char_idx = 0; char_idx < CMDS_IN_PRG; char_idx++)
   {
     for (int cmd_idx = 0; cmd_idx < 8; cmd_idx++)
     {
@@ -79,7 +79,7 @@ static void program_rnd_fill(struct program_t* prg)
     do
       prg->cmds[i] = prng.give_bits(3);
     while (prg->cmds[i] == f1);
-  for (int i = F2_START; i < CMDS_IB_PRG; i++)
+  for (int i = F2_START; i < CMDS_IN_PRG; i++)
     do
       prg->cmds[i] = prng.give_bits(3);
     while ((prg->cmds[i] == f1) || (prg->cmds[i] == f2));
@@ -91,24 +91,24 @@ static void program_mutate(struct program_t* prg)
   for (int mutation = prng.give_bits(3) + 1; mutation; mutation--)
   {
     int cmd_to_mutate = prng.give_bits(5);
-    if (cmd_to_mutate >= CMDS_IB_PRG + 2)
+    if (cmd_to_mutate >= CMDS_IN_PRG + 2)
     {
       /* insert instead of overwrite a cmd */
       cmd_to_mutate = prng.give_bits(5);
-      if (cmd_to_mutate > CMDS_IB_PRG - 2)
-        cmd_to_mutate -= CMDS_IB_PRG - 2;
-      for (int i = CMDS_IB_PRG - 1; i > cmd_to_mutate; i--)
+      if (cmd_to_mutate > CMDS_IN_PRG - 2)
+        cmd_to_mutate -= CMDS_IN_PRG - 2;
+      for (int i = CMDS_IN_PRG - 1; i > cmd_to_mutate; i--)
         prg->cmds[i] = prg->cmds[i - 1];
     }
-    else if (cmd_to_mutate >= CMDS_IB_PRG)
+    else if (cmd_to_mutate >= CMDS_IN_PRG)
     {
       /* delete a cmd, place new at end */
       cmd_to_mutate = prng.give_bits(5);
-      if (cmd_to_mutate > CMDS_IB_PRG - 2)
-        cmd_to_mutate -= CMDS_IB_PRG - 2;
-      for (int i = cmd_to_mutate; i < CMDS_IB_PRG - 1; i++)
+      if (cmd_to_mutate > CMDS_IN_PRG - 2)
+        cmd_to_mutate -= CMDS_IN_PRG - 2;
+      for (int i = cmd_to_mutate; i < CMDS_IN_PRG - 1; i++)
         prg->cmds[i] = prg->cmds[i + 1];
-      cmd_to_mutate = CMDS_IB_PRG - 1;
+      cmd_to_mutate = CMDS_IN_PRG - 1;
     }
     prg->cmds[cmd_to_mutate] = prng.give_bits(3);
   }
@@ -116,12 +116,12 @@ static void program_mutate(struct program_t* prg)
 
 static int program_is_valid(const struct program_t* prg)
 {
-  for (int i = 0; i < CMDS_IB_PRG; i++)
+  for (int i = 0; i < CMDS_IN_PRG; i++)
     assert(prg->cmds[i] >= 0 && prg->cmds[i] <= 7);
   for (int i = F1_START; i < F2_START; i++)
     if (prg->cmds[i] == f1)
       return 0;
-  for (int i = F2_START; i < CMDS_IB_PRG; i++)
+  for (int i = F2_START; i < CMDS_IN_PRG; i++)
     if (prg->cmds[i] == f1 || prg->cmds[i] == f2)
       return 0;
   return 1;
@@ -129,8 +129,8 @@ static int program_is_valid(const struct program_t* prg)
 
 static void program_print(const struct program_t* prg, FILE* stream)
 {
-  char temp[CMDS_IB_PRG];
-  for (int i = 0; i < CMDS_IB_PRG; i++)
+  char temp[CMDS_IN_PRG];
+  for (int i = 0; i < CMDS_IN_PRG; i++)
     temp[i] = CMD_CHARS[prg->cmds[i]];
   fwrite(temp, 1, CMDS_IN_MAIN, stream);
   putc(' ', stream);
@@ -222,7 +222,7 @@ static int program_execute(const struct program_t* prg,
         }
         break;
     }
-    if (pc == F2_START - 1 || pc == CMDS_IB_PRG - 1)
+    if (pc == F2_START - 1 || pc == CMDS_IN_PRG - 1)
       pc = *(--return_stack_top);
     else
       pc++;
@@ -241,7 +241,7 @@ static void self_test()
     uint8_t lights_lit, height_reached;
   }
   test_cases[] =
-  { /*             1       2       */
+  {   /*           1       2      */
     { "1L^LFR21R2__FFF^L^^_^^FF*L^L", 2, 4 },
     { "**1**11_112*_*L_2^_2F_RF_^FL", 2, 4 }
   };
