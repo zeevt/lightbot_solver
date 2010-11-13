@@ -19,9 +19,9 @@ enum cmd_e {
 #define CMDS_IN_FUNC 8
 #define F1_START     12
 #define F2_START     20
-#define CMDS_IB_PRG  28
+#define CMDS_IN_PRG  28
 
-struct program_t { uint8_t cmds[CMDS_IB_PRG]; };
+struct program_t { uint8_t cmds[CMDS_IN_PRG]; };
 
 class square
 {
