@@ -101,6 +101,8 @@ static void program_mutate(struct program_t* prg)
         cmd_to_mutate -= CMDS_IN_PRG - 2;
       for (int i = CMDS_IN_PRG - 1; i > cmd_to_mutate; i--)
         prg->cmds[i] = prg->cmds[i - 1];
+      if (prg->cmds[F1_START] == f1) prg->cmds[F1_START] = nop;
+      if (prg->cmds[F2_START] == f2) prg->cmds[F2_START] = nop;
     }
     else if (cmd_to_mutate >= CMDS_IN_PRG)
     {
@@ -112,11 +114,27 @@ static void program_mutate(struct program_t* prg)
         prg->cmds[i] = prg->cmds[i + 1];
       cmd_to_mutate = CMDS_IN_PRG - 1;
     }
-    prg->cmds[cmd_to_mutate] = prng.give_bits(3);
+    if (cmd_to_mutate >= F2_START)
+    {
+      int new_cmd = prng.give_bits(3);
+      if ((new_cmd == f1) || (new_cmd == f2)) new_cmd = nop;
+      prg->cmds[cmd_to_mutate] = new_cmd;
+    }
+    else if (cmd_to_mutate >= F1_START)
+    {
+      int new_cmd = prng.give_bits(3);
+      if (new_cmd == f1) new_cmd = nop;
+      prg->cmds[cmd_to_mutate] = new_cmd;
+    }
+    else
+    {
+      int new_cmd = prng.give_bits(3);
+      prg->cmds[cmd_to_mutate] = new_cmd;
+    }
   }
 }
 
-static int program_is_valid(const struct program_t* prg)
+static int __attribute__((unused)) program_is_valid(const struct program_t* prg)
 {
   for (int i = 0; i < CMDS_IN_PRG; i++)
     assert(prg->cmds[i] >= 0 && prg->cmds[i] <= 7);
@@ -308,10 +326,15 @@ int main(int argc, char** argv)
   int prev_result = 0;
   long exec_counter = 0;
   timestamp_t t0;
+  timestamp_t mutating, generating, executing;
+  timestamp_clear(mutating);
+  timestamp_clear(generating);
+  timestamp_clear(executing);
   init_timestamper();
   get_timestamp(t0);
   for (;;)
   {
+    timestamp_t bt0, bt1;
     if (!top->next)
     {
       if (!--num_rnd_tries) break;
@@ -322,9 +345,12 @@ int main(int argc, char** argv)
     {
       if (top->next->mutate_cnt < max_mutate_cnt)
       {
+        get_timestamp(bt0);
         top->prg = top->next->prg;
-        do program_mutate(&top->prg);
-        while (!program_is_valid(&top->prg));
+        program_mutate(&top->prg);
+        get_timestamp(bt1);
+        timestamp_diff(bt0, bt1);
+        timestamp_add(mutating, bt0);
         top->next->mutate_cnt++;
       }
       else
@@ -346,13 +372,30 @@ int main(int argc, char** argv)
       timestamp_diff(t0,t1);
       printf("%d program executions took " PRINTF_TIMESTAMP_STR " sec.\n",
              1 << 20, PRINTF_TIMESTAMP_VAL(t0));
+      printf("time mutating:\t" PRINTF_TIMESTAMP_STR " sec.\n",
+             PRINTF_TIMESTAMP_VAL(mutating));
+      printf("time generating code:\t" PRINTF_TIMESTAMP_STR " sec.\n",
+             PRINTF_TIMESTAMP_VAL(generating));
+      printf("time executing code:\t" PRINTF_TIMESTAMP_STR " sec.\n",
+             PRINTF_TIMESTAMP_VAL(executing));
       fflush(stdout);
+      timestamp_clear(mutating);
+      timestamp_clear(generating);
+      timestamp_clear(executing);
       t0 = t1;
     }
     map[2][0].reset_light();
     map[3][7].reset_light();
+    get_timestamp(bt0);
     jitter.generate_code(&top->prg);
+    get_timestamp(bt1);
+    timestamp_diff(bt0, bt1);
+    timestamp_add(generating, bt0);
+    get_timestamp(bt0);
     int max_height_reached = jitter.run_program(1, 0, 1, &map[0][0]);
+    get_timestamp(bt1);
+    timestamp_diff(bt0, bt1);
+    timestamp_add(executing, bt0);
     int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
     top->result = (num_lights_lit << 8) | (max_height_reached & 0xff);
 //    top->result = program_execute<false>(&top->prg, map, NULL);
