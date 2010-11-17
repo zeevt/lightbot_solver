@@ -31,7 +31,7 @@ public:
   uint8_t get_height(void) const { return c & 63; }
   int has_light(void) const { return (c & 128) >> 7; }
   int is_lit(void) const { return (c & 64) >> 6; }
-  void switch_light(void) { c = (c & ~64) | (~c & 64); }
+  void switch_light(void) { c = (((c >> 1) ^ c) & 64) | (c & ~64); }
   void reset_light(void) { c &= ~64; }
 };
 

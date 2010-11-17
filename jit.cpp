@@ -21,109 +21,6 @@ benchmark aligning func entry to 16 byte
 benchmark tail calling last func in function
 */
 
-void do_right(int y, int x, int dir, void *map)
-{
-  asm(
-    "incb %dl\n"
-    "andb $3, %dl\n"
-  );
-}
-
-void do_left(int y, int x, int dir, void *map)
-{
-  asm(
-    "addb $3, %dl\n"
-    "andb $3, %dl\n"
-  );
-}
-
-void do_light(int y, int x, int dir, void *map)
-{
-  asm(
-    "leaq  (%rsi,%rdi,8), %r8\n"
-    "movb  (%rcx,%r8), %al\n"
-    "testb $128, %al\n"
-    "jz    light_end\n"
-    "movb  %al,  %bl\n"
-    "andb  $191, %al\n"
-    "notb  %bl\n"
-    "andb  $64,  %bl\n"
-    "orb   %bl,  %al\n"
-    "movb  %al,  (%rcx,%r8)\n"
-    "light_end:\n"
-  );
-}
-
-void __attribute__((noinline)) do_before_step(int y, int x, int dir, void *map)
-{
-  asm(
-  "leaq (%rsi,%rdi,8), %rax\n"
-  "movb (%rcx,%rax,1), %al\n"
-  "andb $63,  %al\n"
-  "movq %rdi, %r8\n"
-  "movq %rsi, %r9\n"
-  "cmpb $0,   %dl\n"
-  "je   case_n\n"
-  "cmpb $1,   %dl\n"
-  "je   case_e\n"
-  "cmpb $2,   %dl\n"
-  "je   case_s\n"
-  "case_w:\n"
-  "cmpb $0,   %sil\n"
-  "jbe  step_end\n"
-  "decb %r9b\n"
-  "jmp  step_end\n"
-  "case_s:\n"
-  "cmpb $0,   %dil\n"
-  "jbe  step_end\n"
-  "decb %r8b\n"
-  "jmp  step_end\n"
-  "case_e:\n"
-  "cmpb $6,   %sil\n"
-  "ja   step_end\n"
-  "incb %r9b\n"
-  "jmp  step_end\n"
-  "case_n:\n"
-  "cmpb $3,   %dil\n"
-  "ja   step_end\n"
-  "incb %r8b\n"
-  "step_end:\n"
-  "leaq (%r9,%r8,8), %rbx\n"
-  "movb (%rcx,%rbx,1), %bl\n"
-  "andb $63,  %bl\n"
-  );
-}
-
-void do_forward(int y, int x, int dir, void *map)
-{
-  do_before_step(y, x, dir, map);
-  asm(
-    "cmp  %al,  %bl\n"
-    "jne  forward_end\n"
-    "mov  %r8,  %rdi\n"
-    "mov  %r9,  %rsi\n"
-    "forward_end:\n"
-  );
-}
-
-void do_jump(int y, int x, int dir, void *map)
-{
-  do_before_step(y, x, dir, map);
-  asm(
-    "cmp  %al,  %bl\n"
-    "jb   perform_jump\n"
-    "inc  %al\n"
-    "cmp  %al,   %bl\n"
-    "jne  jump_end\n"
-    "cmp  %bl,  %bpl\n"
-    "jae  perform_jump\n"
-    "mov  %bl,  %bpl\n"
-    "perform_jump:\n"
-    "mov  %r8,  %rdi\n"
-    "mov  %r9,  %rsi\n"
-    "jump_end:\n"
-  );
-}
 
 #define handle_error(msg) \
   do { perror(msg); exit(EXIT_FAILURE); } while (0)
@@ -167,51 +64,57 @@ void JITter::generate_code(const struct program_t *prg)
 {
   uint8_t *generated_codep = (uint8_t *)this->generated_code;
   uint8_t *p = generated_codep;
-  *(p++) = '\x55';// push   %rbp
-  *(p++) = '\x53';// push   %rbx
-  *(p++) = '\x31';//
-  *(p++) = '\xed';// xor %ebp, %ebp
-  for (int cmd = 0; cmd < CMDS_IN_MAIN; cmd++)
-  {
-    int curr_cmd = prg->cmds[cmd];
-    if (curr_cmd == nop) continue;
-    int64_t next_rip = (int64_t)p + 5;
-    int64_t target = (int64_t)funcs[curr_cmd];
-    int64_t diff = target - next_rip;
-    *(p++) = '\xe8';// call
-    *(int32_t*)p = (int32_t)(diff);
-    p += 4;
-  }
-  *(p++) = '\x89';//
-  *(p++) = '\xe8';// mov   %ebp, %eax
-  *(p++) = '\x5b';// pop   %rbx
-  *(p++) = '\x5d';// pop   %rbp
+  
+#define WRITE_CALL(cmd) \
+  do { \
+    int curr_cmd = prg->cmds[cmd]; \
+    if (curr_cmd == nop) continue; \
+    int64_t next_rip = (int64_t)p + 5; \
+    int64_t target = (int64_t)funcs[curr_cmd]; \
+    int64_t diff = target - next_rip; \
+    *(p++) = '\xe8';/* call */ \
+    *(int32_t*)p = (int32_t)(diff); \
+    p += 4; \
+  } while(0)
+  
+  // push %rbp ; push %rbx ; xor %ebp, %ebp
+  *(uint32_t*)p = 0xed315355;
+  p += 4;
+  WRITE_CALL(0);
+  WRITE_CALL(1);
+  WRITE_CALL(2);
+  WRITE_CALL(3);
+  WRITE_CALL(4);
+  WRITE_CALL(5);
+  WRITE_CALL(6);
+  WRITE_CALL(7);
+  WRITE_CALL(8);
+  WRITE_CALL(9);
+  WRITE_CALL(10);
+  WRITE_CALL(11);
+  // mov %ebp, %eax ; pop %rbx ; pop %rbp
+  *(uint32_t*)p = 0x5d5be889;
+  p += 4;
   *p = '\xc3';    // retq
   p = &generated_codep[F1_AMD64_START];
-  for (int cmd = F1_START; cmd < F2_START; cmd++)
-  {
-    int curr_cmd = prg->cmds[cmd];
-    if (curr_cmd == nop) continue;
-    int64_t next_rip = (int64_t)p + 5;
-    int64_t target = (int64_t)funcs[curr_cmd];
-    int64_t diff = target - next_rip;
-    *(p++) = '\xe8';// call
-    *(int32_t*)p = (int32_t)(diff);
-    p += 4;
-  }
+  WRITE_CALL(12);
+  WRITE_CALL(13);
+  WRITE_CALL(14);
+  WRITE_CALL(15);
+  WRITE_CALL(16);
+  WRITE_CALL(17);
+  WRITE_CALL(18);
+  WRITE_CALL(19);
   *p = '\xc3';    // retq
   p = &generated_codep[F2_AMD64_START];
-  for (int cmd = F2_START; cmd < CMDS_IN_PRG; cmd++)
-  {
-    int curr_cmd = prg->cmds[cmd];
-    if (curr_cmd == nop) continue;
-    int64_t next_rip = (int64_t)p + 5;
-    int64_t target = (int64_t)funcs[curr_cmd];
-    int64_t diff = target - next_rip;
-    *(p++) = '\xe8';// call
-    *(int32_t*)p = (int32_t)(diff);
-    p += 4;
-  }
+  WRITE_CALL(20);
+  WRITE_CALL(21);
+  WRITE_CALL(22);
+  WRITE_CALL(23);
+  WRITE_CALL(24);
+  WRITE_CALL(25);
+  WRITE_CALL(26);
+  WRITE_CALL(27);
   *p = '\xc3';    // retq
 #ifdef DEBUG
   for (int i = 0; i < GENERATED_CODE_SIZE; i++)

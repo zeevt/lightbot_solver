@@ -6,7 +6,9 @@
 //#include <ncurses.h>
 #include "unix_utils.h"
 #include "lightbot_solver.h"
+#ifdef JIT
 #include "jit.h"
+#endif
 
 static const char* the_map =
   "\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -160,15 +162,28 @@ static void program_print(const struct program_t* prg, FILE* stream)
   putc('\n', stream);
 }
 
-static struct coord_t step(const struct coord_t coord, enum direction dir)
+static __attribute__((const))
+int32_t min(int32_t a, int32_t b)
+{
+  return b + ((a-b) & (a-b)>>31);
+}
+
+static __attribute__((const))
+int32_t max(int32_t a, int32_t b)
+{
+  return a - ((a-b) & (a-b)>>31);
+}
+
+static __attribute__((const))
+struct coord_t step(const struct coord_t coord, enum direction dir)
 {
   struct coord_t result = coord;
   switch(dir)
   {
-    case N: if (result.y < 4) result.y++; break;
-    case E: if (result.x < 7) result.x++; break;
-    case S: if (result.y > 0) result.y--; break;
-    case W: if (result.x > 0) result.x--; break;
+    case N: result.y = min((int32_t)result.y + 1, 4); break;
+    case E: result.x = min((int32_t)result.x + 1, 7); break;
+    case S: result.y = max((int32_t)result.y - 1, 0); break;
+    case W: result.x = max((int32_t)result.x - 1, 0); break;
   }
   return result;
 }
@@ -214,11 +229,8 @@ static int program_execute(const struct program_t* prg,
         pc = F2_START;
         goto again;
       case light:
-        if (map[curr.y][curr.x].has_light())
-        {
-          map[curr.y][curr.x].switch_light();
-          if (callbacks && player) player->switch_light(state);
-        }
+        map[curr.y][curr.x].switch_light();
+        if (callbacks && player) player->switch_light(state);
         break;
       case forward:
       case jump:
@@ -232,9 +244,13 @@ static int program_execute(const struct program_t* prg,
             curr = next;
             if (callbacks && player) player->set_coord(state, curr);
           }
-          break;
         }
-        if ((next_height < curr_height) || (next_height == curr_height + 1))
+        else if (next_height < curr_height)
+        {
+          curr = next;
+          if (callbacks && player) player->set_coord(state, curr);
+        }
+        else if (next_height == curr_height + 1)
         {
           if (next_height > max_height_reached)
             max_height_reached = next_height;
@@ -318,7 +334,9 @@ int main(int argc, char** argv)
     max_mutate_cnt = atoi(argv[3]);
   square map[5][8];
   memcpy(&map[0][0], the_map, sizeof(map));
+#ifdef JIT
   JITter jitter;
+#endif
   struct stack_item* top = new stack_item();
   top->next = NULL;
   top->mutate_cnt = 0;
@@ -326,15 +344,19 @@ int main(int argc, char** argv)
   int prev_result = 0;
   long exec_counter = 0;
   timestamp_t t0;
+#ifdef TIMING
   timestamp_t mutating, generating, executing;
   timestamp_clear(mutating);
   timestamp_clear(generating);
   timestamp_clear(executing);
+#endif
   init_timestamper();
   get_timestamp(t0);
   for (;;)
   {
+#ifdef TIMING
     timestamp_t bt0, bt1;
+#endif
     if (!top->next)
     {
       if (!--num_rnd_tries) break;
@@ -345,12 +367,16 @@ int main(int argc, char** argv)
     {
       if (top->next->mutate_cnt < max_mutate_cnt)
       {
+#ifdef TIMING
         get_timestamp(bt0);
+#endif
         top->prg = top->next->prg;
         program_mutate(&top->prg);
+#ifdef TIMING
         get_timestamp(bt1);
         timestamp_diff(bt0, bt1);
         timestamp_add(mutating, bt0);
+#endif
         top->next->mutate_cnt++;
       }
       else
@@ -372,35 +398,55 @@ int main(int argc, char** argv)
       timestamp_diff(t0,t1);
       printf("%d program executions took " PRINTF_TIMESTAMP_STR " sec.\n",
              1 << 20, PRINTF_TIMESTAMP_VAL(t0));
+#ifdef TIMING
       printf("time mutating:\t" PRINTF_TIMESTAMP_STR " sec.\n",
              PRINTF_TIMESTAMP_VAL(mutating));
       printf("time generating code:\t" PRINTF_TIMESTAMP_STR " sec.\n",
              PRINTF_TIMESTAMP_VAL(generating));
       printf("time executing code:\t" PRINTF_TIMESTAMP_STR " sec.\n",
              PRINTF_TIMESTAMP_VAL(executing));
-      fflush(stdout);
       timestamp_clear(mutating);
       timestamp_clear(generating);
       timestamp_clear(executing);
+#endif
+      fflush(stdout);
       t0 = t1;
     }
     map[2][0].reset_light();
     map[3][7].reset_light();
+    int num_lights_lit;
+#ifdef JIT
+#ifdef TIMING
     get_timestamp(bt0);
+#endif
     jitter.generate_code(&top->prg);
+#ifdef TIMING
     get_timestamp(bt1);
     timestamp_diff(bt0, bt1);
     timestamp_add(generating, bt0);
     get_timestamp(bt0);
+#endif
     int max_height_reached = jitter.run_program(1, 0, 1, &map[0][0]);
+#ifdef TIMING
     get_timestamp(bt1);
     timestamp_diff(bt0, bt1);
     timestamp_add(executing, bt0);
-    int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
+#endif
+    num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
     top->result = (num_lights_lit << 8) | (max_height_reached & 0xff);
-//    top->result = program_execute<false>(&top->prg, map, NULL);
+#else
+#ifdef TIMING
+    get_timestamp(bt0);
+#endif
+    top->result = program_execute<false>(&top->prg, map, NULL);
+#ifdef TIMING
+    get_timestamp(bt1);
+    timestamp_diff(bt0, bt1);
+    timestamp_add(executing, bt0);
+#endif
+    num_lights_lit = top->result >> 8;
+#endif /* JIT */
     if (top->result <= prev_result) continue;
-//    int num_lights_lit = top->result >> 8;
     if (num_lights_lit == 2)
     {
       program_print(&top->prg, stream);
