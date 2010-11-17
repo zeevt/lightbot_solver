@@ -45,13 +45,13 @@ JITter::JITter()
     handle_error("mprotect");
   
   uint8_t *p = (uint8_t *)this->generated_code;
-  this->funcs[right] = &do_right;
-  this->funcs[left] = &do_left;
-  this->funcs[f1] = (func_t)&p[F1_AMD64_START];
-  this->funcs[f2] = (func_t)&p[F2_AMD64_START];
-  this->funcs[light] = &do_light;
-  this->funcs[forward] = &do_forward;
-  this->funcs[jump] = &do_jump;
+  this->adjusted_target[right] = (int64_t)&do_right - 5;
+  this->adjusted_target[left] = (int64_t)&do_left - 5;
+  this->adjusted_target[f1] = (int64_t)&p[F1_AMD64_START] - 5;
+  this->adjusted_target[f2] = (int64_t)&p[F2_AMD64_START] - 5;
+  this->adjusted_target[light] = (int64_t)&do_light - 5;
+  this->adjusted_target[forward] = (int64_t)&do_forward - 5;
+  this->adjusted_target[jump] = (int64_t)&do_jump - 5;
 }
 
 JITter::~JITter()
@@ -69,8 +69,8 @@ void JITter::generate_code(const struct program_t *prg)
   do { \
     int curr_cmd = prg->cmds[cmd]; \
     if (curr_cmd == nop) continue; \
-    int64_t next_rip = (int64_t)p + 5; \
-    int64_t target = (int64_t)funcs[curr_cmd]; \
+    int64_t next_rip = (int64_t)p; \
+    int64_t target = adjusted_target[curr_cmd]; \
     int64_t diff = target - next_rip; \
     *(p++) = '\xe8';/* call */ \
     *(int32_t*)p = (int32_t)(diff); \

@@ -18,8 +18,7 @@ public:
   int run_program(int y, int x, int dir, void *map);
 private:
   void *generated_code;
-  typedef void (*func_t)(int y, int x, int dir, void *map);
-  func_t funcs[7];
+  int64_t adjusted_target[7];
 };
 
 #endif /* jit_h_ */
