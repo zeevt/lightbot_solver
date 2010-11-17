@@ -7,15 +7,6 @@
 #include "jit.h"
 
 /*
-RDI = y
-RSI = x
-RDX = dir
-RCX = map
-R8  = nexy.y
-R9  = nexy.x
-*/
-
-/*
 TODO:
 benchmark aligning func entry to 16 byte
 benchmark tail calling last func in function

@@ -6,6 +6,15 @@ The generated at run-time driver that calls these functions does comply with
 ABI and can be called from code that uses %rbp in the normal manner.
 */
 
+/*
+RDI = y
+RSI = x
+RDX = dir
+RCX = map
+R8  = nexy.y
+R9  = nexy.x
+*/
+
 void do_right(int y, int x, int dir, void *map)
 {
   asm(
@@ -24,18 +33,21 @@ void do_left(int y, int x, int dir, void *map)
 
 void do_light(int y, int x, int dir, void *map)
 {
+  /*
+  unsigned char *m = (unsigned char *)map;
+  unsigned char *c = &m[(y << 3) + x];
+  *c = (((*c >> 1) ^ *c) & 64) | (*c & ~64);
+  */
   asm(
     "leaq  (%rsi,%rdi,8), %r8\n"
     "movb  (%rcx,%r8), %al\n"
-    "testb $128, %al\n"
-    "jz    light_end\n"
-    "movb  %al,  %bl\n"
-    "andb  $191, %al\n"
-    "notb  %bl\n"
-    "andb  $64,  %bl\n"
-    "orb   %bl,  %al\n"
-    "movb  %al,  (%rcx,%r8)\n"
-    "light_end:\n"
+    "mov   %al, %bl\n"
+    "shr   %al\n"
+    "xor   %al, %bl\n"
+    "and   $0xbf, %bl\n"
+    "and   $0x40, %al\n"
+    "or    %bl, %al\n"
+    "mov   %al, (%rcx,%r8)\n"
   );
 }
 
