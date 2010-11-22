@@ -44,7 +44,7 @@ void do_light(int y, int x, int dir, void *map)
     "movb  (%rcx,%r8), %al\n"
     "movb  %al, %bl\n"
     "shr   %al\n"
-    "xorb  %al, %bl\n"
+    "xorb  %bl, %al\n"
     "andb  $0xbf, %bl\n"
     "andb  $0x40, %al\n"
     "orb   %bl, %al\n"
