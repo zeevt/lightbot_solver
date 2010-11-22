@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#ifdef DEBUG
+#include <string.h>
+#endif
 #include <unistd.h>
 #include <sys/mman.h>
 #include "lightbot_solver.h"
@@ -53,6 +56,9 @@ JITter::~JITter()
 
 void JITter::generate_code(const struct program_t *prg)
 {
+#ifdef DEBUG
+  memset(this->generated_code, 0x90, GENERATED_CODE_SIZE);
+#endif
   uint8_t *generated_codep = (uint8_t *)this->generated_code;
   uint8_t *p = generated_codep;
   
