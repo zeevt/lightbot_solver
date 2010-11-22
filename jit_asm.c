@@ -92,6 +92,7 @@ static void __attribute__((noinline)) do_before_step(int y, int x, int dir, void
     "sarb $7,   %al\n" /* CHAR_BITS - 1 */
     "andb %al,  %r8b\n"
     "addb $4,   %r8b\n"/* max_y_coord */
+    ".p2align 4\n"
     "step_end:\n"
     "leaq (%rsi,%rdi,8), %rax\n"
     "leaq (%r9, %r8, 8), %rbx\n"
