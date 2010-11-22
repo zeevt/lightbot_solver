@@ -3,11 +3,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
-//#include <ncurses.h>
 #include "unix_utils.h"
 #include "lightbot_solver.h"
 #ifdef JIT
 #include "jit.h"
+#endif
+#ifdef DEBUG
+#include <ncurses.h>
 #endif
 
 static const char* the_map =
@@ -208,8 +210,8 @@ static int program_execute(const struct program_t* prg,
   do
   {
     again:
-    /*getch();*/
     if (callbacks && player) player->set_pc(state, pc);
+//    getch(); // interactive debug
     switch (prg->cmds[pc])
     {
       case right:
@@ -221,11 +223,11 @@ static int program_execute(const struct program_t* prg,
         if (callbacks && player) player->set_dir(state, curr_dir);
         break;
       case f1:
-        *(return_stack_top++) = pc + 1;
+        *(return_stack_top++) = pc;
         pc = F1_START;
         goto again;
       case f2:
-        *(return_stack_top++) = pc + 1;
+        *(return_stack_top++) = pc;
         pc = F2_START;
         goto again;
       case light:
@@ -259,15 +261,14 @@ static int program_execute(const struct program_t* prg,
         }
         break;
     }
-    if (pc == F2_START - 1 || pc == CMDS_IN_PRG - 1)
+    while (pc == F2_START - 1 || pc == CMDS_IN_PRG - 1)
       pc = *(--return_stack_top);
-    else
-      pc++;
+    pc++;
   }
   while (pc != CMDS_IN_MAIN);
   if (callbacks && player) player->shutdown(state);
   int num_lights_lit = map[2][0].is_lit() + map[3][7].is_lit();
-  return num_lights_lit << 8 | max_height_reached;
+  return (num_lights_lit << 8) | (max_height_reached & 0xff);
 }
 
 static void self_test()
@@ -279,8 +280,13 @@ static void self_test()
   }
   test_cases[] =
   {   /*           1       2      */
+    { "2*1^F1*2^21LF*2L^L_2FF^L^F*R", 2, 4 },
+    { "^*1^F1^2^21LF*2L^L_2FF^L^F*R", 2, 4 },
+    { "1*2121111*L*2L_2FR^^FFF^*L^^", 2, 4 },
+    { "2L**_1F2_*FF*2L_*_F2__^FF^FL", 0, 3 },
+    { "2*L**_1FR_*LF*2R_*_FFFF_^F*_", 0, 2 },
     { "1L^LFR21R2__FFF^L^^_^^FF*L^L", 2, 4 },
-    { "**1**11_112*_*L_2^_2F_RF_^FL", 2, 4 }
+    { "**1**11_112*_*L_2^_2F_RF_^FL", 0, 4 }
   };
   square map[5][8];
   memcpy(&map[0][0], the_map, sizeof(map));
@@ -288,8 +294,6 @@ static void self_test()
   {
     struct program_t prg;
     program_from_string(&prg, test_cases[test_idx].prg);
-    map[2][0].reset_light();
-    map[3][7].reset_light();
     int result = program_execute<true>(&prg, map, &ncurses_player);
     int lights_lit = result >> 8;
     int height_reached = result & 255;
@@ -298,6 +302,14 @@ static void self_test()
     {
       program_print(&prg, stderr);
       fprintf(stderr, "%d %d\n", lights_lit, height_reached);
+      fprintf(stderr, "Test failed.\n");
+    }
+    map[2][0].reset_light();
+    map[3][7].reset_light();
+    if (memcmp(&map[0][0], the_map, 40) != 0)
+    {
+      program_print(&prg, stderr);
+      fprintf(stderr, "map damaged!\n");
       fprintf(stderr, "Test failed.\n");
     }
   }
@@ -359,7 +371,8 @@ int main(int argc, char** argv)
 #endif
     if (!top->next)
     {
-      if (!--num_rnd_tries) break;
+      num_rnd_tries--;
+      if (!num_rnd_tries) break;
       program_rnd_fill(&top->prg);
       prev_result = 0;
     }
@@ -414,7 +427,7 @@ int main(int argc, char** argv)
     }
     map[2][0].reset_light();
     map[3][7].reset_light();
-    int num_lights_lit;
+    int num_lights_lit, max_height_reached;
 #ifdef JIT
 #ifdef TIMING
     get_timestamp(bt0);
@@ -426,7 +439,7 @@ int main(int argc, char** argv)
     timestamp_add(generating, bt0);
     get_timestamp(bt0);
 #endif
-    int max_height_reached = jitter.run_program(1, 0, 1, &map[0][0]);
+    max_height_reached = jitter.run_program(1, 0, 1, &map[0][0]);
 #ifdef TIMING
     get_timestamp(bt1);
     timestamp_diff(bt0, bt1);
@@ -445,7 +458,15 @@ int main(int argc, char** argv)
     timestamp_add(executing, bt0);
 #endif
     num_lights_lit = top->result >> 8;
+    max_height_reached = top->result & 0xff;
 #endif /* JIT */
+    /*
+    program_print(&top->prg, stream);
+    fputc(num_lights_lit + '0', stream);
+    fputc(' ', stream);
+    fputc(max_height_reached + '0', stream);
+    fputc('\n', stream);
+    */
     if (top->result <= prev_result) continue;
     if (num_lights_lit == 2)
     {
