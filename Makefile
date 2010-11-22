@@ -18,8 +18,8 @@ else
 CC = gcc
 GPP = g++
 LDFLAGS = -Wl,-O1 -Wl,--as-needed -fwhole-program -flto
-CFLAGS = -std=gnu99 -Wall -pedantic
-CXXFLAGS = -std=c++98 -Wall -pedantic -fvisibility=hidden -fno-exceptions -fno-rtti -flto
+CFLAGS = -std=gnu99 -Wall -pedantic -Wstrict-overflow=4
+CXXFLAGS = -std=c++98 -Wall -pedantic -Wstrict-overflow=4 -fvisibility=hidden -fno-exceptions -fno-rtti -flto
 OPT_FLAGS = -DNDEBUG -g -fomit-frame-pointer
 DEBUG_FLAGS = -DDEBUG -O0 -ggdb -gdwarf-4 -fno-omit-frame-pointer
 PGO_GEN_FLAGS = -fprofile-generate -O3
